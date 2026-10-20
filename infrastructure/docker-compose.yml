@@ -1,0 +1,54 @@
+services:
+  # ── No local Postgres — using Supabase hosted PostgreSQL ──
+
+  redis:
+    image: redis:7-alpine
+    container_name: sentra-redis
+    restart: always
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ../backend
+      dockerfile: ../infrastructure/Dockerfile.backend
+    container_name: sentra-backend
+    restart: always
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file:
+      - ../.env
+    volumes:
+      - ../backend:/app
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: ../infrastructure/Dockerfile.frontend
+    container_name: sentra-frontend
+    restart: always
+    command: npx next dev -H 0.0.0.0 -p 3000
+    env_file:
+      - ../.env
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+      - /app/.next
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      - backend
+
+volumes:
+  redis_data:

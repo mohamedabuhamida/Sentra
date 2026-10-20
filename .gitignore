@@ -1,0 +1,46 @@
+# ─── Environment ───────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ─── Dependencies ──────────────────────────────────
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# ─── Build outputs ─────────────────────────────────
+.next/
+frontend/.next/
+frontend/out/
+*.egg-info/
+dist/
+build/
+*.tsbuildinfo
+.vercel/
+
+# ─── IDE / OS ──────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Docker ────────────────────────────────────────
+infrastructure/postgres_data/
+infrastructure/redis_data/
+
+# ─── Logs / Testing ───────────────────────────────
+*.log
+.coverage
+htmlcov/
+.pytest_cache/
+
+# ─── ML Models (large) ────────────────────────────
+*.pt
+*.bin
+*.safetensors
+models_cache/
