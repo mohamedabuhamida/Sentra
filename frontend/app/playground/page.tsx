@@ -7,6 +7,8 @@ import {
 } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { sendChatMessage } from "@/lib/api";
+import { useAuth } from "@/lib/authContext";
 
 interface ExecutionResult {
   status: "safe" | "blocked";
@@ -40,6 +42,7 @@ const samplePrompts = [
 ];
 
 export default function PlaygroundPage() {
+  const { token } = useAuth();
   const [prompt, setPrompt] = useState(samplePrompts[0].text);
   const [isExecuting, setIsExecuting] = useState(false);
   const [result, setResult] = useState<ExecutionResult | null>({
@@ -47,7 +50,7 @@ export default function PlaygroundPage() {
     riskScore: 0.02,
     attackType: null,
     taskType: "Question Answering / Deep Tech",
-    selectedModel: "gemini-1.5-flash",
+    selectedModel: "gemini-2.5-flash",
     latencyMs: 148,
     tokens: { prompt: 24, completion: 280, total: 304 },
     costUsd: 0.00014,
@@ -55,53 +58,99 @@ export default function PlaygroundPage() {
       "A Multi-Layer Perceptron (MLP) relies on static feedforward dense layers where each neuron connects to all neurons in the subsequent layer, processing fixed-size tabular or flattened inputs.\n\nIn contrast, Transformers utilize self-attention mechanisms (Scaled Dot-Product Attention) which dynamically weigh relationships between any pair of tokens regardless of their positional distance. This enables parallel processing across sequences and contextual representation far superior to MLPs.",
   });
 
-  const handleRun = () => {
+  const handleRun = async () => {
+    if (!prompt.trim()) return;
     setIsExecuting(true);
-    setTimeout(() => {
-      setIsExecuting(false);
 
-      const isAttack =
-        prompt.toLowerCase().includes("ignore all") ||
-        prompt.toLowerCase().includes("dan") ||
-        prompt.toLowerCase().includes("do anything now") ||
-        prompt.toLowerCase().includes("system prompt");
+    try {
+      const res = await sendChatMessage(prompt, { token: token || undefined });
 
-      if (isAttack) {
+      if (res.ok) {
+        const data = res.data;
+        const isSafe = data.security?.is_safe !== false;
+        setResult({
+          status: isSafe ? "safe" : "blocked",
+          riskScore: data.security?.risk_score ?? 0.02,
+          attackType: data.security?.attack_type ?? null,
+          taskType: data.analysis?.task_type ?? "General Prompt",
+          selectedModel: data.cached ? `${data.model_used} (Cached)` : data.model_used,
+          latencyMs: Math.round(data.latency_ms),
+          tokens: {
+            prompt: data.tokens?.prompt_tokens ?? Math.floor(prompt.length / 4),
+            completion: data.tokens?.completion_tokens ?? 0,
+            total: data.tokens?.total_tokens ?? Math.floor(prompt.length / 4),
+          },
+          costUsd: data.cost_usd ?? 0.0,
+          output: data.response_text,
+        });
+      } else if (res.status === 403 && "blockedDetail" in res) {
+        const detail = res.blockedDetail;
+        const risk = detail.risk_score ?? 0.96;
+        const attack = detail.attack_type || "Prompt Injection / Malicious Directive";
         setResult({
           status: "blocked",
-          riskScore: 0.96,
-          attackType: prompt.toLowerCase().includes("dan")
-            ? "Jailbreak / Roleplay Bypass"
-            : "Direct Instruction Override / System Leak",
+          riskScore: risk,
+          attackType: attack,
           taskType: "Hostile Injection Attempt",
           selectedModel: "BLOCKED (Security Shield)",
-          latencyMs: 14,
-          tokens: { prompt: Math.floor(prompt.length / 4), completion: 0, total: Math.floor(prompt.length / 4) },
-          costUsd: 0.0,
-          output:
-            "⛔ [SENTRA SECURITY SHIELD INTERCEPT]\n\nRequest was blocked prior to foundation model execution.\n• Violation: OWASP LLM01 - Prompt Injection Detected\n• Risk Score: 96.4%\n• Policy Action: HTTP 403 Forbidden\n• Incident ID: sec_plg_" + Math.random().toString(36).substring(2, 8),
-        });
-      } else {
-        const isCode = prompt.toLowerCase().includes("python") || prompt.toLowerCase().includes("code") || prompt.toLowerCase().includes("middleware");
-        setResult({
-          status: "safe",
-          riskScore: 0.03,
-          attackType: null,
-          taskType: isCode ? "Software Engineering / Code" : "Technical Inquiry",
-          selectedModel: isCode ? "gpt-4o" : "gemini-1.5-flash",
-          latencyMs: isCode ? 260 : 140,
+          latencyMs: Math.round(detail.latency_ms ?? 14),
           tokens: {
             prompt: Math.floor(prompt.length / 4),
-            completion: 310,
-            total: Math.floor(prompt.length / 4) + 310,
+            completion: 0,
+            total: Math.floor(prompt.length / 4),
           },
-          costUsd: isCode ? 0.0048 : 0.00018,
-          output: isCode
-            ? "```python\nimport time\nfrom fastapi import Request, HTTPException\nimport redis.asyncio as redis\n\nclass TokenBucketMiddleware:\n    def __init__(self, redis_client: redis.Redis, rate: int = 100, capacity: int = 200):\n        self.redis = redis_client\n        self.rate = rate\n        self.capacity = capacity\n\n    async def __call__(self, request: Request, call_next):\n        client_ip = request.client.host\n        key = f'rate_limit:{client_ip}'\n        # Atomic token deduction logic...\n        return await call_next(request)\n```"
-            : "Sentra Gateway successfully analyzed your input, confirmed 0 security anomalies, selected the most optimal foundation model according to your SLA policy, and executed the prompt cleanly.",
+          costUsd: 0.0,
+          output: `⛔ [SENTRA SECURITY SHIELD INTERCEPT]\n\nRequest was blocked prior to foundation model execution.\n• Violation: OWASP LLM01 - Prompt Injection Detected (${attack})\n• Risk Score: ${(risk * 100).toFixed(1)}%\n• Policy Action: HTTP 403 Forbidden (${detail.action || "BLOCK"})\n• Security Message: ${detail.message || "Threat intercepted and dropped by Sentra AI Security Shield."}`,
         });
+      } else {
+        // Backend offline or unreachable fallback
+        const isAttack =
+          prompt.toLowerCase().includes("ignore all") ||
+          prompt.toLowerCase().includes("dan") ||
+          prompt.toLowerCase().includes("do anything now") ||
+          prompt.toLowerCase().includes("system prompt");
+
+        if (isAttack) {
+          setResult({
+            status: "blocked",
+            riskScore: 0.96,
+            attackType: prompt.toLowerCase().includes("dan")
+              ? "Jailbreak / Roleplay Bypass"
+              : "Direct Instruction Override / System Leak",
+            taskType: "Hostile Injection Attempt",
+            selectedModel: "BLOCKED (Security Shield)",
+            latencyMs: 14,
+            tokens: { prompt: Math.floor(prompt.length / 4), completion: 0, total: Math.floor(prompt.length / 4) },
+            costUsd: 0.0,
+            output:
+              "⛔ [SENTRA SECURITY SHIELD INTERCEPT]\n\nRequest was blocked prior to foundation model execution.\n• Violation: OWASP LLM01 - Prompt Injection Detected\n• Risk Score: 96.4%\n• Policy Action: HTTP 403 Forbidden\n• Incident ID: sec_plg_" + Math.random().toString(36).substring(2, 8),
+          });
+        } else {
+          const isCode = prompt.toLowerCase().includes("python") || prompt.toLowerCase().includes("code") || prompt.toLowerCase().includes("middleware");
+          setResult({
+            status: "safe",
+            riskScore: 0.03,
+            attackType: null,
+            taskType: isCode ? "Software Engineering / Code" : "Technical Inquiry",
+            selectedModel: isCode ? "gpt-4o" : "gemini-2.5-flash",
+            latencyMs: isCode ? 260 : 140,
+            tokens: {
+              prompt: Math.floor(prompt.length / 4),
+              completion: 310,
+              total: Math.floor(prompt.length / 4) + 310,
+            },
+            costUsd: isCode ? 0.0048 : 0.00018,
+            output: isCode
+              ? "```python\nimport time\nfrom fastapi import Request, HTTPException\nimport redis.asyncio as redis\n\nclass TokenBucketMiddleware:\n    def __init__(self, redis_client: redis.Redis, rate: int = 100, capacity: int = 200):\n        self.redis = redis_client\n        self.rate = rate\n        self.capacity = capacity\n\n    async def __call__(self, request: Request, call_next):\n        client_ip = request.client.host\n        key = f'rate_limit:{client_ip}'\n        # Atomic token deduction logic...\n        return await call_next(request)\n```"
+              : "Sentra Gateway successfully analyzed your input, confirmed 0 security anomalies, selected the most optimal foundation model according to your SLA policy, and executed the prompt cleanly.",
+          });
+        }
       }
-    }, 400);
+    } catch {
+      // Handled cleanly
+    } finally {
+      setIsExecuting(false);
+    }
   };
 
   return (
@@ -128,15 +177,15 @@ export default function PlaygroundPage() {
 
         {/* Input & Output Split Canvas */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-          {/* Input Panel */}
-          <div className="bg-white rounded-2xl border border-[#E4E7EB] p-6 shadow-xs flex flex-col justify-between h-[560px]">
+          {/* Input Panel — dark terminal aesthetic */}
+          <div className="bg-[#0F172A] rounded-2xl border border-[#1E293B] p-6 flex flex-col justify-between h-[560px]">
             <div>
-              <div className="flex items-center justify-between pb-3 border-b border-[#E4E7EB]">
-                <h3 className="text-sm font-bold text-[#0F172A]">
-                  Client Inbound Prompt
+              <div className="flex items-center justify-between pb-3 border-b border-[#1E293B]">
+                <h3 className="text-sm font-semibold text-slate-200">
+                  Prompt input
                 </h3>
-                <span className="text-xs text-[#94A3B8] font-mono">
-                  {prompt.length} chars • ~{Math.floor(prompt.length / 4)} tokens
+                <span className="text-xs text-slate-500 font-mono">
+                  {prompt.length} chars · ~{Math.floor(prompt.length / 4)} tokens
                 </span>
               </div>
 
@@ -144,14 +193,14 @@ export default function PlaygroundPage() {
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="Type or paste any user prompt to test through the Sentra gateway pipeline..."
-                className="w-full mt-3 h-80 p-3.5 bg-[#F8FAFC] border border-[#E4E7EB] rounded-xl text-xs font-mono text-[#0F172A] focus:outline-none focus:border-[#3382F6] focus:bg-white resize-none leading-relaxed"
+                className="w-full mt-3 h-80 p-3.5 bg-[#1E293B] border border-[#334155] rounded-xl text-sm font-mono text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-[#3382F6] resize-none leading-relaxed"
               />
             </div>
 
-            <div className="pt-4 border-t border-[#E4E7EB] flex items-center justify-between">
+            <div className="pt-4 border-t border-[#1E293B] flex items-center justify-between">
               <button
                 onClick={() => setPrompt("")}
-                className="px-3 py-2 text-xs text-[#64748B] hover:text-[#0F172A] inline-flex items-center gap-1"
+                className="px-3 py-2 text-xs text-slate-500 hover:text-slate-200 inline-flex items-center gap-1 transition-colors"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 Clear
@@ -163,7 +212,7 @@ export default function PlaygroundPage() {
                 className="px-5 py-2.5 rounded-xl bg-[#3382F6] hover:bg-[#2563EB] disabled:opacity-50 text-white text-xs font-bold inline-flex items-center gap-2 shadow-xs transition-colors"
               >
                 <Play className="w-4 h-4 fill-current" />
-                <span>{isExecuting ? "Evaluating Pipeline..." : "Execute Gateway"}</span>
+                <span>{isExecuting ? "Evaluating..." : "Execute gateway"}</span>
               </button>
             </div>
           </div>

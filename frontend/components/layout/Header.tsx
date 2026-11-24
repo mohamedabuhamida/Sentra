@@ -8,11 +8,20 @@ import {
   ChevronDown,
   Layers,
   Play,
+  LogOut,
+  LogIn,
 } from "lucide-react";
 import Link from "next/link";
+import { useAuth } from "@/lib/authContext";
 
-export function Header() {
+interface HeaderProps {
+  title?: string;
+  subtitle?: string;
+}
+
+export function Header({ title, subtitle }: HeaderProps = {}) {
   const [timeRange, setTimeRange] = useState("Last 24 Hours");
+  const { user, profile, signOut } = useAuth();
 
   return (
     <header className="sticky top-0 z-20 flex h-16 w-full items-center border-b border-[#E4E7EB] bg-white px-6">
@@ -20,6 +29,13 @@ export function Header() {
 
         {/* Left Group: Search and Environment */}
         <div className="flex min-w-0 flex-1 items-center gap-3">
+          {title && (
+            <div className="hidden lg:block shrink-0 pr-3 border-r border-[#E4E7EB]">
+              <span className="font-bold text-xs text-[#0F172A] block">{title}</span>
+              {subtitle && <span className="text-[10px] text-[#94A3B8] block truncate max-w-xs">{subtitle}</span>}
+            </div>
+          )}
+
           {/* Global Search */}
           <div className="relative hidden min-w-0 flex-1 lg:block">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
@@ -83,20 +99,45 @@ export function Header() {
             <span>Playground</span>
           </Link>
 
-          {/* User Profile */}
+          {/* User Profile / Auth Actions */}
           <div className="flex shrink-0 items-center gap-2 border-l border-[#E4E7EB] pl-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 font-mono text-xs font-bold text-white">
-              SA
-            </div>
+            {user ? (
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 font-mono text-xs font-bold text-white uppercase">
+                  {profile?.full_name ? profile.full_name.slice(0, 2) : user.email?.slice(0, 2) || "U"}
+                </div>
 
-            <div className="hidden text-left xl:block">
-              <span className="block text-xs font-bold leading-tight text-[#0F172A]">
-                SecOps Admin
-              </span>
-              <span className="block font-mono text-[10px] leading-tight text-[#94A3B8]">
-                admin@sentra.ai
-              </span>
-            </div>
+                <div className="hidden text-left xl:block">
+                  <div className="flex items-center gap-1.5">
+                    <span className="block text-xs font-bold leading-tight text-[#0F172A]">
+                      {profile?.full_name || user.user_metadata?.full_name || "Analyst"}
+                    </span>
+                    <span className="rounded-md bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 capitalize">
+                      {profile?.role || "user"}
+                    </span>
+                  </div>
+                  <span className="block font-mono text-[10px] leading-tight text-[#94A3B8]">
+                    {user.email}
+                  </span>
+                </div>
+
+                <button
+                  onClick={() => signOut()}
+                  title="Sign out"
+                  className="rounded-lg p-1.5 text-[#94A3B8] hover:bg-red-50 hover:text-red-600 transition-colors"
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <Link
+                href="/login"
+                className="flex items-center gap-1.5 rounded-xl border border-[#E4E7EB] bg-[#F8FAFC] px-3 py-1.5 text-xs font-semibold text-[#0F172A] hover:bg-white hover:border-[#3382F6] transition-colors"
+              >
+                <LogIn className="h-3.5 w-3.5 text-[#3382F6]" />
+                <span>Sign In</span>
+              </Link>
+            )}
           </div>
         </div>
 

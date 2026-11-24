@@ -1,376 +1,335 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Sliders,
-  Zap,
   DollarSign,
   Award,
-  ArrowRight,
-  RefreshCw,
   Plus,
+  Trash2,
+  Power,
+  Lock,
+  Loader2,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { AdminGuard } from "@/components/ui/AdminGuard";
+import { API_BASE_URL } from "@/lib/api";
+import { useAuth } from "@/lib/authContext";
+
+interface RoutingRule {
+  id: string;
+  name: string;
+  description?: string;
+  is_active: boolean;
+  priority: number;
+  match_task_type: string[];
+  match_keywords: string[];
+  min_complexity?: string;
+  force_model?: string;
+  routing_strategy: string;
+}
 
 export default function RoutingPage() {
-  const [costWeight, setCostWeight] = useState(40);
-  const [qualityWeight, setQualityWeight] = useState(45);
-  const [latencyWeight, setLatencyWeight] = useState(15);
+  const { token, profile, loading: authLoading } = useAuth();
+  const isAdmin = profile?.role === "admin";
+
   const [activeStrategy, setActiveStrategy] = useState("multi-objective");
+  const [rules, setRules] = useState<RoutingRule[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Create rule form
+  const [showNew, setShowNew] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newDesc, setNewDesc] = useState("");
+  const [newModel, setNewModel] = useState("gemini-2.5-flash");
+  const [newPriority, setNewPriority] = useState(10);
+  const [saving, setSaving] = useState(false);
+
+  const loadRules = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/routing`);
+      if (res.ok) {
+        setRules(await res.json());
+      }
+    } catch {
+      setError("Failed to load routing rules from backend.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadRules();
+  }, []);
+
+  const handleToggleRule = async (rule: RoutingRule) => {
+    if (!isAdmin || !token) return;
+    setError(null);
+    const res = await fetch(`${API_BASE_URL}/routing/${rule.id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ is_active: !rule.is_active }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setError(err.detail || "Admin permission required to update routing rules.");
+      return;
+    }
+    loadRules();
+  };
+
+  const handleCreateRule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdmin || !token) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/routing`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          name: newName,
+          description: newDesc,
+          force_model: newModel,
+          priority: newPriority,
+          routing_strategy: activeStrategy,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setError(err.detail || "Failed to create routing rule.");
+      } else {
+        setNewName("");
+        setNewDesc("");
+        setShowNew(false);
+        loadRules();
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteRule = async (id: string) => {
+    if (!isAdmin || !token) return;
+    const res = await fetch(`${API_BASE_URL}/routing/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) loadRules();
+  };
+
+  if (authLoading) {
+    return (
+      <AppShell title="Model Routing" subtitle="Loading routing permissions...">
+        <div className="flex items-center justify-center py-24 text-xs text-[#64748B]">
+          <Loader2 className="w-4 h-4 animate-spin mr-2 text-[#3382F6]" />
+          Verifying workspace permissions...
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <AppShell title="Model Routing" subtitle="Admin-only routing policies">
+        <AdminGuard pageName="Model Routing policies" />
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell
       title="Intelligent Model Routing & Fallback Policies"
-      subtitle="Configure dynamic model selection algorithms, task-specific rules, and resilient fallback chains."
+      subtitle="Live routing rules stored in Supabase `routing_rules` with role-based admin control."
     >
       <div className="space-y-6">
-        {/* Strategy Selector Strip */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <button
-            onClick={() => {
-              setActiveStrategy("multi-objective");
-              setCostWeight(40);
-              setQualityWeight(45);
-              setLatencyWeight(15);
-            }}
-            className={`p-4 rounded-2xl border text-left transition-all ${
-              activeStrategy === "multi-objective"
-                ? "bg-white border-[#3382F6] ring-2 ring-blue-500/20 shadow-xs"
-                : "bg-white border-[#E4E7EB] hover:border-[#CBD5E1]"
-            }`}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <span className="p-2 rounded-xl bg-blue-50 text-blue-600 border border-blue-200">
-                <Sliders className="w-4 h-4" />
-              </span>
-              <StatusBadge status="success" label="Active" />
-            </div>
-            <h3 className="text-sm font-bold text-[#0F172A]">
-              Multi-Objective ML Router
-            </h3>
-            <p className="text-xs text-[#64748B] mt-1">
-              Balances cost, output quality, and SLA latency based on extracted task features.
-            </p>
-          </button>
+        {!isAdmin && (
+          <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+            <Lock className="w-4 h-4 shrink-0" />
+            <span>
+              <strong>Viewer Mode (Read-Only):</strong> Your role is{" "}
+              <code className="font-mono">{profile?.role || "viewer"}</code>. Only{" "}
+              <strong>admin</strong> users can create, toggle, or delete routing rules.
+            </span>
+          </div>
+        )}
 
-          <button
-            onClick={() => {
-              setActiveStrategy("cost-first");
-              setCostWeight(75);
-              setQualityWeight(15);
-              setLatencyWeight(10);
-            }}
-            className={`p-4 rounded-2xl border text-left transition-all ${
-              activeStrategy === "cost-first"
-                ? "bg-white border-[#3382F6] ring-2 ring-blue-500/20 shadow-xs"
-                : "bg-white border-[#E4E7EB] hover:border-[#CBD5E1]"
-            }`}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <span className="p-2 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200">
-                <DollarSign className="w-4 h-4" />
-              </span>
-              <StatusBadge status="neutral" label="Ready" />
-            </div>
-            <h3 className="text-sm font-bold text-[#0F172A]">
-              Aggressive Cost Minimizer
-            </h3>
-            <p className="text-xs text-[#64748B] mt-1">
-              Prioritizes high-efficiency models (Gemini Flash, Llama 3) for standard tasks.
-            </p>
-          </button>
+        {error && (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">
+            {error}
+          </div>
+        )}
 
-          <button
-            onClick={() => {
-              setActiveStrategy("quality-first");
-              setCostWeight(10);
-              setQualityWeight(80);
-              setLatencyWeight(10);
-            }}
-            className={`p-4 rounded-2xl border text-left transition-all ${
-              activeStrategy === "quality-first"
-                ? "bg-white border-[#3382F6] ring-2 ring-blue-500/20 shadow-xs"
-                : "bg-white border-[#E4E7EB] hover:border-[#CBD5E1]"
-            }`}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <span className="p-2 rounded-xl bg-purple-50 text-purple-600 border border-purple-200">
-                <Award className="w-4 h-4" />
-              </span>
-              <StatusBadge status="neutral" label="Ready" />
-            </div>
-            <h3 className="text-sm font-bold text-[#0F172A]">
-              Maximum Quality Frontier
-            </h3>
-            <p className="text-xs text-[#64748B] mt-1">
-              Guarantees top-tier frontier models (Claude 3.5 Sonnet, GPT-4o) regardless of price.
-            </p>
-          </button>
+        {/* Strategy Selector — horizontal tab strip */}
+        <div className="bg-white border border-[#E4E7EB] rounded-2xl p-1.5 flex gap-1">
+          {[
+            {
+              key: "multi-objective",
+              title: "Multi-objective router",
+              desc: "Balances cost, quality, and SLA latency",
+              icon: Sliders,
+            },
+            {
+              key: "cost-first",
+              title: "Cost minimizer",
+              desc: "Gemini Flash and Llama 3 for standard tasks",
+              icon: DollarSign,
+            },
+            {
+              key: "quality-first",
+              title: "Quality frontier",
+              desc: "Claude 3.5 Sonnet and GPT-4o guaranteed",
+              icon: Award,
+            },
+          ].map((s) => {
+            const Icon = s.icon;
+            const active = activeStrategy === s.key;
+            return (
+              <button
+                key={s.key}
+                onClick={() => setActiveStrategy(s.key)}
+                className={`flex-1 flex items-center gap-2.5 px-4 py-3 rounded-xl text-left transition-all ${
+                  active
+                    ? "bg-[#0F172A] text-white shadow-sm"
+                    : "text-[#64748B] hover:text-[#0F172A] hover:bg-[#F8FAFC]"
+                }`}
+              >
+                <Icon className={`w-4 h-4 shrink-0 ${active ? "text-blue-300" : ""}`} />
+                <div className="min-w-0">
+                  <span className={`block text-xs font-semibold ${active ? "text-white" : "text-[#0F172A]"}`}>
+                    {s.title}
+                  </span>
+                  <span className={`block text-[11px] truncate mt-0.5 ${active ? "text-slate-400" : "text-[#94A3B8]"}`}>
+                    {s.desc}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
         </div>
 
-        {/* Weights Tuning & Fallback Chain */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Optimization Weights Slider */}
-          <div className="bg-white rounded-2xl border border-[#E4E7EB] p-6 shadow-xs">
-            <h3 className="text-base font-bold text-[#0F172A]">
-              Routing Optimization Weights
-            </h3>
-            <p className="text-xs text-[#64748B] mt-0.5">
-              Fine-tune the scoring function used by the routing engine.
-            </p>
-
-            <div className="mt-6 space-y-6">
-              <div>
-                <div className="flex justify-between text-xs mb-2">
-                  <span className="font-semibold text-[#0F172A] flex items-center gap-1.5">
-                    <Award className="w-3.5 h-3.5 text-purple-600" />
-                    Quality & Accuracy Weight
-                  </span>
-                  <span className="font-mono font-bold text-purple-600">
-                    {qualityWeight}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={qualityWeight}
-                  onChange={(e) => setQualityWeight(Number(e.target.value))}
-                  className="w-full accent-purple-600 cursor-pointer"
-                />
-              </div>
-
-              <div>
-                <div className="flex justify-between text-xs mb-2">
-                  <span className="font-semibold text-[#0F172A] flex items-center gap-1.5">
-                    <DollarSign className="w-3.5 h-3.5 text-emerald-600" />
-                    Cost Optimization Weight
-                  </span>
-                  <span className="font-mono font-bold text-emerald-600">
-                    {costWeight}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={costWeight}
-                  onChange={(e) => setCostWeight(Number(e.target.value))}
-                  className="w-full accent-emerald-600 cursor-pointer"
-                />
-              </div>
-
-              <div>
-                <div className="flex justify-between text-xs mb-2">
-                  <span className="font-semibold text-[#0F172A] flex items-center gap-1.5">
-                    <Zap className="w-3.5 h-3.5 text-blue-600" />
-                    Latency & SLA Weight
-                  </span>
-                  <span className="font-mono font-bold text-blue-600">
-                    {latencyWeight}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={latencyWeight}
-                  onChange={(e) => setLatencyWeight(Number(e.target.value))}
-                  className="w-full accent-blue-600 cursor-pointer"
-                />
-              </div>
-
-              <div className="pt-4 border-t border-[#E4E7EB] flex items-center justify-between">
-                <span className="text-xs text-[#64748B]">
-                  Estimated Monthly Savings:
-                </span>
-                <span className="text-sm font-mono font-bold text-emerald-600">
-                  ~34.8% reduction
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Automatic Fallback Resiliency Chain */}
-          <div className="bg-white rounded-2xl border border-[#E4E7EB] p-6 shadow-xs">
-            <div className="flex items-center justify-between pb-4 border-b border-[#E4E7EB]">
-              <div>
-                <h3 className="text-base font-bold text-[#0F172A] flex items-center gap-2">
-                  <RefreshCw className="w-4 h-4 text-blue-600" />
-                  Provider Fallback Cascade
-                </h3>
-                <p className="text-xs text-[#64748B] mt-0.5">
-                  Automated circuit breaker and failover sequence on provider timeouts.
-                </p>
-              </div>
-              <StatusBadge status="success" label="Circuit Ready" />
-            </div>
-
-            <div className="mt-4 space-y-3">
-              <div className="p-3.5 rounded-xl border border-blue-200 bg-blue-50/50 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold font-mono">
-                    1
-                  </span>
-                  <div>
-                    <h4 className="text-xs font-bold text-[#0F172A]">
-                      Primary: Selected LLM by Router
-                    </h4>
-                    <p className="text-[11px] text-[#64748B]">
-                      Timeout limit: 4,000ms • HTTP 429 / 5xx triggers step 2
-                    </p>
-                  </div>
-                </div>
-                <span className="text-xs font-mono text-blue-700 font-semibold">
-                  Primary
-                </span>
-              </div>
-
-              <div className="flex justify-center -my-1 text-[#CBD5E1]">
-                <ArrowRight className="w-4 h-4 rotate-90" />
-              </div>
-
-              <div className="p-3.5 rounded-xl border border-[#E4E7EB] bg-[#F8FAFC] flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="w-6 h-6 rounded-full bg-slate-700 text-white flex items-center justify-center text-xs font-bold font-mono">
-                    2
-                  </span>
-                  <div>
-                    <h4 className="text-xs font-bold text-[#0F172A]">
-                      Secondary: Cross-Provider Equivalent
-                    </h4>
-                    <p className="text-[11px] text-[#64748B]">
-                      E.g. GPT-4o → Claude 3.5 Sonnet / Gemini 1.5 Pro
-                    </p>
-                  </div>
-                </div>
-                <span className="text-xs font-mono text-[#64748B]">
-                  Cloud Backup
-                </span>
-              </div>
-
-              <div className="flex justify-center -my-1 text-[#CBD5E1]">
-                <ArrowRight className="w-4 h-4 rotate-90" />
-              </div>
-
-              <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/40 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-bold font-mono">
-                    3
-                  </span>
-                  <div>
-                    <h4 className="text-xs font-bold text-[#0F172A]">
-                      Tertiary: Local Self-Hosted Ollama Cluster
-                    </h4>
-                    <p className="text-[11px] text-[#64748B]">
-                      Guaranteed zero external network dependencies (Llama-3-8B)
-                    </p>
-                  </div>
-                </div>
-                <span className="text-xs font-mono text-emerald-700 font-semibold">
-                  Air-Gapped
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Task Domain Routing Matrix */}
+        {/* Live Routing Rules Table */}
         <div className="bg-white rounded-2xl border border-[#E4E7EB] p-6 shadow-xs">
           <div className="flex items-center justify-between pb-4 border-b border-[#E4E7EB]">
             <div>
               <h3 className="text-base font-bold text-[#0F172A]">
-                Task-Domain Model Mapping Rules
+                Database Routing Rules (`public.routing_rules`)
               </h3>
               <p className="text-xs text-[#64748B] mt-0.5">
-                Explicit model assignments based on Request Analyzer classification.
+                {rules.length} rule(s) loaded from Supabase PostgreSQL.
               </p>
             </div>
-            <button
-              onClick={() => alert("Add task mapping rule modal")}
-              className="px-3 py-1.5 rounded-xl bg-[#3382F6] hover:bg-[#2563EB] text-white text-xs font-semibold inline-flex items-center gap-1.5 transition-colors shadow-xs"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Add Domain Rule
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => setShowNew(!showNew)}
+                className="px-3 py-2 rounded-xl bg-[#3382F6] hover:bg-[#2563EB] text-white text-xs font-semibold inline-flex items-center gap-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add Routing Rule
+              </button>
+            )}
           </div>
+
+          {showNew && isAdmin && (
+            <form onSubmit={handleCreateRule} className="mt-4 p-4 rounded-xl bg-[#F8FAFC] border border-[#E4E7EB] grid grid-cols-1 md:grid-cols-4 gap-3">
+              <input
+                required
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Rule name (e.g. Code Generation)"
+                className="px-3 py-2 rounded-lg border border-[#E4E7EB] bg-white text-xs"
+              />
+              <input
+                value={newDesc}
+                onChange={(e) => setNewDesc(e.target.value)}
+                placeholder="Description"
+                className="px-3 py-2 rounded-lg border border-[#E4E7EB] bg-white text-xs"
+              />
+              <input
+                value={newModel}
+                onChange={(e) => setNewModel(e.target.value)}
+                placeholder="Force model (e.g. gpt-4o)"
+                className="px-3 py-2 rounded-lg border border-[#E4E7EB] bg-white text-xs font-mono"
+              />
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  value={newPriority}
+                  onChange={(e) => setNewPriority(Number(e.target.value))}
+                  className="w-20 px-3 py-2 rounded-lg border border-[#E4E7EB] bg-white text-xs"
+                />
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex-1 px-3 py-2 rounded-lg bg-[#3382F6] text-white text-xs font-semibold flex items-center justify-center gap-1"
+                >
+                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save"}
+                </button>
+              </div>
+            </form>
+          )}
 
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="border-b border-[#E4E7EB] text-[#64748B] bg-[#F8FAFC]">
-                  <th className="py-3 px-4 font-semibold">Detected Task Type</th>
-                  <th className="py-3 px-4 font-semibold">Complexity</th>
-                  <th className="py-3 px-4 font-semibold">Preferred Model</th>
-                  <th className="py-3 px-4 font-semibold">Fallback Model</th>
-                  <th className="py-3 px-4 font-semibold">Cache TTL</th>
-                  <th className="py-3 px-4 font-semibold">Status</th>
+                  <th className="py-3 px-4">Priority</th>
+                  <th className="py-3 px-4">Rule Name</th>
+                  <th className="py-3 px-4">Strategy</th>
+                  <th className="py-3 px-4">Target Model</th>
+                  <th className="py-3 px-4">Status</th>
+                  {isAdmin && <th className="py-3 px-4 text-right">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E4E7EB]">
-                <tr className="hover:bg-[#F8FAFC]">
-                  <td className="py-3.5 px-4 font-semibold text-[#0F172A]">
-                    Document & Financial Analysis
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-700 font-medium">
-                      High (Long Context)
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 font-mono font-medium text-[#0F172A]">
-                    claude-3-5-sonnet
-                  </td>
-                  <td className="py-3.5 px-4 font-mono text-[#64748B]">
-                    gpt-4o
-                  </td>
-                  <td className="py-3.5 px-4 font-mono">12 Hours</td>
-                  <td className="py-3.5 px-4">
-                    <StatusBadge status="success" label="Active" />
-                  </td>
-                </tr>
-
-                <tr className="hover:bg-[#F8FAFC]">
-                  <td className="py-3.5 px-4 font-semibold text-[#0F172A]">
-                    Code Generation & Refactoring
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">
-                      High (Technical)
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 font-mono font-medium text-[#0F172A]">
-                    gpt-4o
-                  </td>
-                  <td className="py-3.5 px-4 font-mono text-[#64748B]">
-                    qwen-2.5-coder (Local)
-                  </td>
-                  <td className="py-3.5 px-4 font-mono">24 Hours</td>
-                  <td className="py-3.5 px-4">
-                    <StatusBadge status="success" label="Active" />
-                  </td>
-                </tr>
-
-                <tr className="hover:bg-[#F8FAFC]">
-                  <td className="py-3.5 px-4 font-semibold text-[#0F172A]">
-                    General Q&A / Customer Support
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-medium">
-                      Low (Fast Response)
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 font-mono font-medium text-[#0F172A]">
-                    gemini-1.5-flash
-                  </td>
-                  <td className="py-3.5 px-4 font-mono text-[#64748B]">
-                    llama-3-8b (Local)
-                  </td>
-                  <td className="py-3.5 px-4 font-mono">7 Days</td>
-                  <td className="py-3.5 px-4">
-                    <StatusBadge status="success" label="Active" />
-                  </td>
-                </tr>
+                {rules.map((r) => (
+                  <tr key={r.id} className="hover:bg-[#F8FAFC]">
+                    <td className="py-3 px-4 font-mono font-bold">#{r.priority}</td>
+                    <td className="py-3 px-4">
+                      <span className="font-semibold text-[#0F172A] block">{r.name}</span>
+                      {r.description && <span className="text-[11px] text-[#64748B]">{r.description}</span>}
+                    </td>
+                    <td className="py-3 px-4 font-mono">{r.routing_strategy}</td>
+                    <td className="py-3 px-4 font-mono text-blue-600">{r.force_model || "Auto"}</td>
+                    <td className="py-3 px-4">
+                      <StatusBadge status={r.is_active ? "success" : "neutral"} label={r.is_active ? "Active" : "Paused"} />
+                    </td>
+                    {isAdmin && (
+                      <td className="py-3 px-4 text-right space-x-2">
+                        <button
+                          onClick={() => handleToggleRule(r)}
+                          className="p-1.5 rounded-lg border border-[#E4E7EB] hover:bg-white text-[#64748B]"
+                          title="Toggle rule"
+                        >
+                          <Power className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteRule(r.id)}
+                          className="p-1.5 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-600"
+                          title="Delete rule"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+                {rules.length === 0 && !loading && (
+                  <tr>
+                    <td colSpan={isAdmin ? 6 : 5} className="py-8 text-center text-[#64748B]">
+                      No routing rules in Supabase yet. {isAdmin ? "Click 'Add Routing Rule' to create one." : ""}
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

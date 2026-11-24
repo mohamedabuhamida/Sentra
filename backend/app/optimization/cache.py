@@ -13,7 +13,7 @@ class SemanticCache:
         self._cache_store: Dict[str, Dict[str, Any]] = {
             "what are the core differences between transformer multi-head and grouped query attention?": {
                 "response": "Multi-Head Attention (MHA) maintains independent Query, Key, and Value heads for every head. Grouped-Query Attention (GQA) groups query heads to share a smaller number of Key-Value heads, dramatically reducing memory bandwidth and KV-cache size during decoding with minimal degradation in perplexity.",
-                "model": "gemini-1.5-flash",
+                "model": "gemini-2.5-flash",
                 "tokens": {"prompt_tokens": 14, "completion_tokens": 58, "total_tokens": 72},
                 "cached_at": time.time(),
             }

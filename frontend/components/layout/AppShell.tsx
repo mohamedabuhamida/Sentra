@@ -6,9 +6,11 @@ import { Header } from "./Header";
 
 interface AppShellProps {
   children: React.ReactNode;
+  title?: string;
+  subtitle?: string;
 }
 
-export function AppShell({ children }: AppShellProps) {
+export function AppShell({ children, title, subtitle }: AppShellProps) {
   return (
     <div className="flex min-h-screen bg-[#F8FAFC]">
       {/* Fixed Sidebar */}

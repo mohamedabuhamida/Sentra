@@ -1,5 +1,8 @@
 from typing import List
-from pydantic_settings import BaseSettings
+try:
+    from pydantic_settings import BaseSettings
+except ImportError:
+    from pydantic import BaseModel as BaseSettings
 
 
 class Settings(BaseSettings):
@@ -39,7 +42,7 @@ class Settings(BaseSettings):
     # ── CORS ─────────────────────────────────────────────────
     # Stored as a comma-separated string; use the property below in code.
     # e.g. BACKEND_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
-    BACKEND_CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000"
+    BACKEND_CORS_ORIGINS: str = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3100,http://127.0.0.1:3100"
 
     @property
     def cors_origins(self) -> List[str]:

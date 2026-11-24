@@ -178,8 +178,8 @@ export function RequestFlowVisualizer() {
 
         <div className="flex items-center gap-3 shrink-0">
           <div className="text-right">
-            <span className="text-[10px] uppercase tracking-wider text-[#94A3B8] block">
-              Operational Metric
+            <span className="text-[11px] text-[#64748B] block">
+              Operational metric
             </span>
             <span className="text-xs font-mono font-bold text-[#0F172A]">
               {selectedStep.stat}

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   ShieldAlert,
   ShieldCheck,
@@ -8,15 +8,60 @@ import {
   AlertOctagon,
   Sliders,
   Flame,
+  RefreshCw,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { KPICard } from "@/components/ui/KPICard";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { mockSecurityEvents } from "@/lib/mockData";
+import { SecurityEvent } from "@/lib/mockData";
+import { fetchSecurityIncidents, fetchAnalytics, AnalyticsSummary } from "@/lib/api";
+import { AdminGuard } from "@/components/ui/AdminGuard";
+import { useAuth } from "@/lib/authContext";
 
 export default function SecurityPage() {
+  const { profile, loading: authLoading } = useAuth();
+  const isAdmin = profile?.role === "admin";
   const [blockThreshold, setBlockThreshold] = useState(85);
   const [sanitizeThreshold, setSanitizeThreshold] = useState(60);
+  const [securityEvents, setSecurityEvents] = useState<SecurityEvent[]>([]);
+  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLive, setIsLive] = useState<boolean>(true);
+
+  useEffect(() => {
+    let isMounted = true;
+    Promise.all([fetchSecurityIncidents(), fetchAnalytics()]).then(([data, ana]) => {
+      if (isMounted) {
+        setSecurityEvents(data);
+        if (ana) setAnalytics(ana);
+        setIsLive(true);
+        setIsLoading(false);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleManualRefresh = async () => {
+    setIsLoading(true);
+    try {
+      const [data, ana] = await Promise.all([fetchSecurityIncidents(), fetchAnalytics()]);
+      setSecurityEvents(data);
+      if (ana) setAnalytics(ana);
+      setIsLive(true);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (!authLoading && !isAdmin) {
+    return (
+      <AppShell title="Security Shield" subtitle="Admin-only security telemetry">
+        <AdminGuard pageName="the Cybersecurity Shield dashboard" />
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell
@@ -28,19 +73,19 @@ export default function SecurityPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <KPICard
             title="Total Prompts Evaluated"
-            value="65,050"
+            value={analytics ? analytics.kpis.total_requests.toLocaleString() : "0"}
             change="100% scanned"
             isPositiveChange={true}
-            timeframe="all active endpoints"
+            timeframe="live request_logs"
             icon={ShieldCheck}
             iconColor="blue"
           />
           <KPICard
             title="Injection Attacks Blocked"
-            value="342"
-            change="0.71% threat rate"
+            value={String(securityEvents.length)}
+            change={`${analytics?.kpis.threat_rate_pct ?? 0}% threat rate`}
             isPositiveChange={false}
-            timeframe="0 breached"
+            timeframe="live security_incidents"
             icon={ShieldAlert}
             iconColor="rose"
           />
@@ -49,16 +94,16 @@ export default function SecurityPage() {
             value="99.4%"
             change="0.12% false pos"
             isPositiveChange={true}
-            timeframe="DeBERTa-v3 model"
+            timeframe="DeBERTa-v3 + Rules"
             icon={Lock}
             iconColor="emerald"
           />
           <KPICard
-            title="Avg Shield Overhead"
-            value="4.2ms"
-            change="negligible impact"
+            title="Avg Gateway Latency"
+            value={analytics ? `${analytics.kpis.avg_latency_ms}ms` : "0ms"}
+            change="pre-execution scan"
             isPositiveChange={true}
-            timeframe="pre-execution scan"
+            timeframe="live telemetry"
             icon={AlertOctagon}
             iconColor="violet"
           />
@@ -146,25 +191,12 @@ export default function SecurityPage() {
               </div>
             </div>
 
-            <div className="mt-6 pt-4 border-t border-[#E4E7EB] grid grid-cols-3 gap-3 text-center">
-              <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E4E7EB]">
-                <span className="text-[10px] text-[#94A3B8] block">Primary Model</span>
-                <span className="text-xs font-mono font-bold text-[#0F172A]">
-                  DeBERTa-v3 Fine-tuned
-                </span>
-              </div>
-              <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E4E7EB]">
-                <span className="text-[10px] text-[#94A3B8] block">Vector Heuristics</span>
-                <span className="text-xs font-mono font-bold text-emerald-600">
-                  Cosine Threshold 0.88
-                </span>
-              </div>
-              <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#E4E7EB]">
-                <span className="text-[10px] text-[#94A3B8] block">Rules Engine</span>
-                <span className="text-xs font-mono font-bold text-[#0F172A]">
-                  128 Signatures Active
-                </span>
-              </div>
+            <div className="mt-6 pt-4 border-t border-[#E4E7EB] flex items-center gap-6 text-xs text-[#64748B]">
+              <span><span className="font-semibold text-[#0F172A]">TF-IDF + Regex</span> — primary model</span>
+              <span className="text-[#E4E7EB]">|</span>
+              <span><span className="font-semibold text-emerald-600">0.88</span> cosine threshold</span>
+              <span className="text-[#E4E7EB]">|</span>
+              <span><span className="font-semibold text-[#0F172A]">128</span> signatures active</span>
             </div>
           </div>
 
@@ -259,7 +291,23 @@ export default function SecurityPage() {
                 Every prompt injection attempt captured before reaching foundation models.
               </p>
             </div>
-            <StatusBadge status="danger" label="Firewall Enforced" />
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleManualRefresh}
+                disabled={isLoading}
+                title="Refresh threat intercepts"
+                className="p-2 rounded-xl border border-[#E4E7EB] bg-[#F8FAFC] hover:bg-white text-[#64748B] hover:text-[#0F172A] transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin text-[#3382F6]" : ""}`} />
+              </button>
+              {isLive ? (
+                <span className="text-[10px] font-mono font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                  LIVE FEED
+                </span>
+              ) : (
+                <StatusBadge status="danger" label="Firewall Enforced" />
+              )}
+            </div>
           </div>
 
           <div className="mt-4 overflow-x-auto">
@@ -276,7 +324,7 @@ export default function SecurityPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E4E7EB]">
-                {mockSecurityEvents.map((event) => (
+                {securityEvents.map((event) => (
                   <tr key={event.id} className="hover:bg-[#F8FAFC]">
                     <td className="py-3.5 px-4 font-mono font-bold text-[#0F172A]">
                       {event.id}

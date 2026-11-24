@@ -20,6 +20,8 @@
   --color-sentra-danger: #EF4444;
   --color-sentra-info: #3B82F6;
 
+  --font-geist-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-geist-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

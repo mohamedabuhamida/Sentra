@@ -44,7 +44,7 @@ export function KPICard({
     <div className="bg-white rounded-2xl border border-[#E4E7EB] p-5 shadow-xs hover:border-[#CBD5E1] transition-all duration-200">
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-xs font-semibold text-[#64748B] tracking-wider uppercase">
+          <p className="text-xs font-medium text-[#64748B]">
             {title}
           </p>
           <h3 className="mt-2 text-2xl font-bold tracking-tight text-[#0F172A]">

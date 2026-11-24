@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Search,
   Filter,
@@ -8,19 +8,56 @@ import {
   ArrowRight,
   Shield,
   Cpu,
+  RefreshCw,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { StatusBadge } from "@/components/ui/StatusBadge";
-import { mockRequests, GatewayRequest } from "@/lib/mockData";
+import { GatewayRequest } from "@/lib/mockData";
+import { fetchGatewayRequests } from "@/lib/api";
+import { AdminGuard } from "@/components/ui/AdminGuard";
+import { useAuth } from "@/lib/authContext";
 
 export default function RequestsPage() {
+  const { profile, loading: authLoading } = useAuth();
+  const isAdmin = profile?.role === "admin";
+  const [requests, setRequests] = useState<GatewayRequest[]>([]);
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState<string>("");
-  const [selectedRequest, setSelectedRequest] = useState<GatewayRequest | null>(
-    mockRequests[0]
-  );
+  const [selectedRequest, setSelectedRequest] = useState<GatewayRequest | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLive, setIsLive] = useState<boolean>(true);
 
-  const filteredRequests = mockRequests.filter((req) => {
+  useEffect(() => {
+    let isMounted = true;
+    fetchGatewayRequests().then((data) => {
+      if (isMounted) {
+        setRequests(data);
+        setSelectedRequest(data[0] || null);
+        setIsLive(true);
+        setIsLoading(false);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleManualRefresh = async () => {
+    setIsLoading(true);
+    try {
+      const data = await fetchGatewayRequests();
+      setRequests(data);
+      setSelectedRequest((prev) => {
+        if (!prev) return data[0] || null;
+        return data.find((r) => r.id === prev.id) || data[0] || null;
+      });
+      setIsLive(true);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const filteredRequests = requests.filter((req) => {
     const matchesStatus =
       filterStatus === "all" || req.status === filterStatus;
     const matchesSearch =
@@ -30,6 +67,14 @@ export default function RequestsPage() {
       req.promptSnippet.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesStatus && matchesSearch;
   });
+
+  if (!authLoading && !isAdmin) {
+    return (
+      <AppShell title="Request Logs" subtitle="Admin-only audit logs">
+        <AdminGuard pageName="Request Logs & Trace Explorer" />
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell
@@ -68,8 +113,16 @@ export default function RequestsPage() {
           </div>
 
           <div className="flex items-center gap-3 self-end md:self-auto">
+            <button
+              onClick={handleManualRefresh}
+              disabled={isLoading}
+              title="Refresh requests feed"
+              className="p-2 rounded-xl border border-[#E4E7EB] bg-[#F8FAFC] hover:bg-white text-[#64748B] hover:text-[#0F172A] transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? "animate-spin text-[#3382F6]" : ""}`} />
+            </button>
             <span className="text-xs text-[#64748B] font-mono">
-              Showing {filteredRequests.length} of {mockRequests.length} traces
+              Showing {filteredRequests.length} of {requests.length} traces {isLive ? "(Live)" : "(Simulated)"}
             </span>
             <button
               onClick={() => alert("Exporting request log archive (CSV/JSON)...")}
@@ -85,10 +138,19 @@ export default function RequestsPage() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Requests Table List (7 Cols) */}
           <div className="lg:col-span-7 bg-white rounded-2xl border border-[#E4E7EB] shadow-xs overflow-hidden">
-            <div className="p-4 border-b border-[#E4E7EB] bg-[#F8FAFC]">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[#64748B]">
-                Inbound Request Feed
+            <div className="p-4 border-b border-[#E4E7EB] bg-[#F8FAFC] flex items-center justify-between">
+              <h3 className="text-xs font-semibold text-[#64748B]">
+                Inbound request feed
               </h3>
+              {isLive ? (
+                <span className="text-[10px] font-mono font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                  LIVE API SYNCED
+                </span>
+              ) : (
+                <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                  OFFLINE CACHE
+                </span>
+              )}
             </div>
 
             <div className="divide-y divide-[#E4E7EB] max-h-[720px] overflow-y-auto">
@@ -119,7 +181,7 @@ export default function RequestsPage() {
                               ? "info"
                               : "warning"
                           }
-                          label={req.status.toUpperCase()}
+                          label={req.status.charAt(0).toUpperCase() + req.status.slice(1)}
                         />
                         <span className="text-[11px] text-[#94A3B8]">
                           {req.timestamp}
@@ -156,8 +218,8 @@ export default function RequestsPage() {
               <div className="space-y-6">
                 <div className="flex items-center justify-between pb-4 border-b border-[#E4E7EB]">
                   <div>
-                    <span className="text-[10px] uppercase font-bold tracking-wider text-[#94A3B8]">
-                      Request Trace Inspector
+                    <span className="text-[10px] font-medium text-[#64748B]">
+                      Request trace
                     </span>
                     <h3 className="font-mono text-base font-bold text-[#0F172A]">
                       {selectedRequest.id}
@@ -173,7 +235,7 @@ export default function RequestsPage() {
                         ? "info"
                         : "warning"
                     }
-                    label={selectedRequest.status.toUpperCase()}
+                    label={selectedRequest.status.charAt(0).toUpperCase() + selectedRequest.status.slice(1)}
                   />
                 </div>
 

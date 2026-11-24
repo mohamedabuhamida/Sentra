@@ -11,44 +11,59 @@ import {
   ShieldAlert,
   Server,
   PlayCircle,
+  KeyRound,
+  Settings,
+  BarChart3,
 } from "lucide-react";
+import { useAuth } from "@/lib/authContext";
 
-const semesterOneItems = [
-  { name: "Overview", href: "/", icon: LayoutDashboard, badge: "MVP" },
-  { name: "Request Logs", href: "/requests", icon: Activity, badge: "Live" },
+const navItems = [
+  { name: "Overview", href: "/", icon: LayoutDashboard, badge: "Admin", adminOnly: true },
+  { name: "Analytics", href: "/analytics", icon: BarChart3, badge: null, adminOnly: true },
+  { name: "Request Logs", href: "/requests", icon: Activity, badge: "Live", adminOnly: true },
   {
     name: "Security Shield",
     href: "/security",
     icon: ShieldAlert,
     badge: "OWASP",
     badgeType: "danger",
+    adminOnly: true,
   },
-  { name: "Basic Model Routing", href: "/routing", icon: Split, badge: null },
+  { name: "Model Routing", href: "/routing", icon: Split, badge: null, adminOnly: true },
   {
     name: "LLM Providers",
     href: "/providers",
     icon: Server,
-    badge: "4 Active",
+    badge: "Admin",
+    adminOnly: true,
   },
+  { name: "API Keys", href: "/api-keys", icon: KeyRound, badge: null, adminOnly: false },
   {
     name: "Gateway Playground",
     href: "/playground",
     icon: PlayCircle,
     badge: "Test",
     badgeType: "ai",
+    adminOnly: false,
   },
+  { name: "Profile & Settings", href: "/settings", icon: Settings, badge: null, adminOnly: false },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === "admin";
+
+  const visibleItems = navItems.filter((item) => !item.adminOnly || isAdmin);
 
   return (
     <aside className="group/sidebar sticky top-0 z-30 flex h-screen w-16 shrink-0 flex-col overflow-x-hidden overflow-y-auto border-r border-sentra-border bg-white transition-[width] duration-300 ease-in-out hover:w-64">
       {/* Brand Header */}
       <div className="flex h-16 shrink-0 items-center justify-start overflow-hidden border-b border-sentra-border px-3">
         <Link
-          href="/"
+          href={isAdmin ? "/" : "/playground"}
           aria-label="Sentra home"
+          style={{ position: "relative" }}
           className="relative block h-10 w-10 shrink-0 transition-[width] duration-300 group-hover/sidebar:w-[224px]"
         >
           {/* Collapsed Icon */}
@@ -75,7 +90,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 p-2">
-        {semesterOneItems.map((item) => {
+        {visibleItems.map((item) => {
           const Icon = item.icon;
 
           const isActive =
@@ -101,12 +116,10 @@ export function Sidebar() {
                 }`}
               />
 
-              {/* Navigation Label */}
               <span className="min-w-0 flex-1 overflow-hidden whitespace-nowrap opacity-0 transition-opacity duration-200 group-hover/sidebar:opacity-100">
                 {item.name}
               </span>
 
-              {/* Navigation Badge */}
               {item.badge && (
                 <span
                   className={`absolute right-3 hidden shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold group-hover/sidebar:block ${
